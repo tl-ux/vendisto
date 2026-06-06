@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '@/api/supabaseClient'
-import { Search, Plus, Package, X, Image as ImageIcon, Play, ExternalLink } from 'lucide-react'
+import { Search, Plus, Package, X, Image as ImageIcon, Play, ExternalLink, Pencil, Trash2, Tag } from 'lucide-react'
 
 const EMPTY = {
   name: '', price: '', unit: 'יח׳', stock: '', category_id: '', active: true,
@@ -41,11 +41,140 @@ async function uploadImages(files, productId) {
   return urls
 }
 
-function getPlayEmbed(url) {
+function getYoutubeEmbed(url) {
   if (!url) return null
   const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
   return m ? `https://www.youtube.com/embed/${m[1]}` : null
 }
+
+// ─── Category sheet (bottom drawer) ─────────────────────────────────────────
+
+function CategorySheet({ initial, onSave, onClose }) {
+  const [name, setName] = useState(initial?.name || '')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    try {
+      if (initial?.id) {
+        const { error } = await supabase.from('categories').update({ name: name.trim() }).eq('id', initial.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('categories').insert({ name: name.trim() })
+        if (error) throw error
+      }
+      onSave()
+    } catch (e) {
+      alert('שגיאה: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+      <div className="bg-background rounded-t-2xl p-4 flex flex-col gap-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
+          <h3 className="font-bold text-base flex-1">{initial ? 'עריכת קטגוריה' : 'קטגוריה חדשה'}</h3>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+          placeholder="שם הקטגוריה"
+          className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !name.trim()}
+          className="w-full bg-primary text-primary-foreground font-semibold rounded-xl py-2.5 text-sm disabled:opacity-40"
+        >
+          {saving ? '...' : 'שמור'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Categories tab ──────────────────────────────────────────────────────────
+
+function CategoriesTab({ categories, products, onRefresh }) {
+  const [sheet, setSheet] = useState(null) // null | 'new' | category object
+
+  const countFor = (catId) => products.filter((p) => p.category_id === catId).length
+
+  const handleDelete = async (cat) => {
+    const count = countFor(cat.id)
+    if (count > 0) {
+      alert(`לא ניתן למחוק — ${count} מוצרים משויכים לקטגוריה זו`)
+      return
+    }
+    if (!window.confirm(`למחוק את "${cat.name}"?`)) return
+    const { error } = await supabase.from('categories').delete().eq('id', cat.id)
+    if (error) alert('שגיאה: ' + error.message)
+    else onRefresh()
+  }
+
+  return (
+    <>
+      <div className="flex-1 overflow-y-auto px-4 pb-24 flex flex-col gap-2 pt-2">
+        {categories.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <Tag size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="font-medium">אין קטגוריות</p>
+          </div>
+        ) : (
+          categories.map((cat) => {
+            const count = countFor(cat.id)
+            return (
+              <div key={cat.id} className="bg-card border border-border rounded-xl px-3.5 py-3 flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Tag size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{cat.name}</p>
+                  <p className="text-xs text-muted-foreground">{count} מוצרים</p>
+                </div>
+                <button
+                  onClick={() => setSheet(cat)}
+                  className="p-2 text-muted-foreground rounded-lg hover:bg-muted transition-colors"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => handleDelete(cat)}
+                  className="p-2 text-muted-foreground rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      <button
+        onClick={() => setSheet('new')}
+        className="fixed bottom-20 left-4 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center"
+      >
+        <Plus size={26} />
+      </button>
+
+      {sheet && (
+        <CategorySheet
+          initial={sheet === 'new' ? null : sheet}
+          onSave={() => { setSheet(null); onRefresh() }}
+          onClose={() => setSheet(null)}
+        />
+      )}
+    </>
+  )
+}
+
+// ─── Product form ────────────────────────────────────────────────────────────
 
 function ProductForm({ initial, categories, onSave, onClose }) {
   const [form, setForm] = useState(
@@ -118,7 +247,7 @@ function ProductForm({ initial, categories, onSave, onClose }) {
     }
   }
 
-  const embedUrl = getPlayEmbed(form.youtube_url)
+  const embedUrl = getYoutubeEmbed(form.youtube_url)
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -241,27 +370,11 @@ function ProductForm({ initial, categories, onSave, onClose }) {
   )
 }
 
-export default function Products() {
-  const [products, setProducts] = useState([])
-  const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
+// ─── Products tab ────────────────────────────────────────────────────────────
+
+function ProductsTab({ products, categories, loading, onEdit, onNew }) {
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('all')
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState(null)
-
-  const loadData = async () => {
-    setLoading(true)
-    const [{ data: prods }, { data: cats }] = await Promise.all([
-      supabase.from('products').select('*, categories(name)').order('name'),
-      supabase.from('categories').select('*').order('name'),
-    ])
-    setProducts(prods || [])
-    setCategories(cats || [])
-    setLoading(false)
-  }
-
-  useEffect(() => { loadData() }, [])
 
   const filtered = useMemo(() => {
     let list = products
@@ -270,23 +383,15 @@ export default function Products() {
     return list
   }, [products, activeCategory, search])
 
-  const openEdit = (p) => { setEditing(p); setShowForm(true) }
-  const openNew = () => { setEditing(null); setShowForm(true) }
-  const handleSaved = () => { setShowForm(false); loadData() }
-
   return (
-    <div className="flex flex-col h-full">
-      <div className="bg-primary text-primary-foreground px-4 py-3">
-        <h1 className="font-bold text-lg">מוצרים</h1>
-      </div>
-
-      <div className="p-4 flex flex-col gap-3">
+    <>
+      <div className="px-4 pt-3 flex flex-col gap-3">
         <div className="flex items-center border border-border rounded-xl px-3 py-2 bg-background">
           <Search size={15} className="text-muted-foreground ml-2 shrink-0" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חפש מוצר..."
             className="flex-1 bg-transparent outline-none text-sm" />
         </div>
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => setActiveCategory('all')}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${activeCategory === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
             הכל
@@ -300,7 +405,7 @@ export default function Products() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-24 flex flex-col gap-2">
+      <div className="flex-1 overflow-y-auto px-4 pb-24 flex flex-col gap-2 pt-2">
         {loading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-card border border-border rounded-xl p-4 animate-pulse h-16" />
@@ -312,7 +417,7 @@ export default function Products() {
           </div>
         ) : (
           filtered.map((p) => (
-            <button key={p.id} onClick={() => openEdit(p)}
+            <button key={p.id} onClick={() => onEdit(p)}
               className="bg-card border border-border rounded-xl p-3.5 flex items-center gap-3 text-right w-full">
               <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0">
                 {p.images?.length > 0 ? (
@@ -329,8 +434,8 @@ export default function Products() {
                   {p.categories?.name && <span>{p.categories.name}</span>}
                   <span>{p.unit}</span>
                   {p.stock !== null && <span>• מלאי: {p.stock}</span>}
-                  {p.youtube_url && <Play size={11} className="inline" />}
-                  {p.gdrive_url && <ExternalLink size={11} className="inline" />}
+                  {p.youtube_url && <Play size={11} />}
+                  {p.gdrive_url && <ExternalLink size={11} />}
                 </p>
               </div>
               <div className="text-left shrink-0">
@@ -343,12 +448,87 @@ export default function Products() {
         )}
       </div>
 
-      <button onClick={openNew}
+      <button onClick={onNew}
         className="fixed bottom-20 left-4 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center">
         <Plus size={26} />
       </button>
+    </>
+  )
+}
 
-      {showForm && <ProductForm initial={editing} categories={categories} onSave={handleSaved} onClose={() => setShowForm(false)} />}
+// ─── Main page ───────────────────────────────────────────────────────────────
+
+export default function Products() {
+  const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('products')
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState(null)
+
+  const loadData = async () => {
+    setLoading(true)
+    const [{ data: prods }, { data: cats }] = await Promise.all([
+      supabase.from('products').select('*, categories(name)').order('name'),
+      supabase.from('categories').select('*').order('name'),
+    ])
+    setProducts(prods || [])
+    setCategories(cats || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadData() }, [])
+
+  const openEdit = (p) => { setEditing(p); setShowForm(true) }
+  const openNew = () => { setEditing(null); setShowForm(true) }
+  const handleSaved = () => { setShowForm(false); loadData() }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="bg-primary text-primary-foreground px-4 py-3">
+        <h1 className="font-bold text-lg">מוצרים</h1>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-border bg-background shrink-0">
+        <button
+          onClick={() => setTab('products')}
+          className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 ${tab === 'products' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}
+        >
+          מוצרים
+        </button>
+        <button
+          onClick={() => setTab('categories')}
+          className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 ${tab === 'categories' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}
+        >
+          קטגוריות
+        </button>
+      </div>
+
+      {tab === 'products' ? (
+        <ProductsTab
+          products={products}
+          categories={categories}
+          loading={loading}
+          onEdit={openEdit}
+          onNew={openNew}
+        />
+      ) : (
+        <CategoriesTab
+          categories={categories}
+          products={products}
+          onRefresh={loadData}
+        />
+      )}
+
+      {showForm && (
+        <ProductForm
+          initial={editing}
+          categories={categories}
+          onSave={handleSaved}
+          onClose={() => setShowForm(false)}
+        />
+      )}
     </div>
   )
 }
