@@ -91,7 +91,7 @@ export default function NewOrder() {
   }, [])
 
   const filtered = useMemo(() => {
-    let list = products
+    let list = products.filter((p) => p.stock === null || p.stock > 0)
     if (activeCategory !== 'all') list = list.filter((p) => p.category_id === activeCategory)
     if (search) list = list.filter((p) => p.name.includes(search))
     return list
