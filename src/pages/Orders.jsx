@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/api/supabaseClient'
 import { useAuth } from '@/lib/AuthContext'
-import { Plus, Search, ChevronLeft, Clock, CheckCircle2, XCircle, Truck } from 'lucide-react'
+import { Plus, Search, Clock, CheckCircle2, XCircle, Truck, MoreVertical, Trash2, X } from 'lucide-react'
 
 const STATUS = {
-  pending:   { label: 'ממתין',   color: 'bg-yellow-100 text-yellow-700', icon: Clock },
-  confirmed: { label: 'אושר',    color: 'bg-blue-100 text-blue-700',    icon: CheckCircle2 },
-  delivered: { label: 'נמסר',   color: 'bg-green-100 text-green-700',  icon: Truck },
-  cancelled: { label: 'בוטל',   color: 'bg-red-100 text-red-700',      icon: XCircle },
+  pending:   { label: 'ממתין',  color: 'bg-yellow-100 text-yellow-700', icon: Clock },
+  confirmed: { label: 'אושר',   color: 'bg-blue-100 text-blue-700',    icon: CheckCircle2 },
+  delivered: { label: 'נמסר',  color: 'bg-green-100 text-green-700',  icon: Truck },
+  cancelled: { label: 'בוטל',  color: 'bg-red-100 text-red-700',      icon: XCircle },
 }
 
 function StatusBadge({ status }) {
@@ -40,6 +40,9 @@ export default function Orders() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [actionOrder, setActionOrder] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const fetchOrders = async () => {
     setLoading(true)
@@ -48,13 +51,38 @@ export default function Orders() {
       .select('id, created_at, total, status, note, customers(name, phone)')
       .order('created_at', { ascending: false })
       .limit(100)
-    if (role === 'store_manager') query = query.eq('created_by', user.id)
-    const { data } = await query
+    if (role === 'store_manager') query = query.eq('agent_id', user.id)
+    const { data, error } = await query
+    if (error) console.error('orders fetch:', error)
     setOrders(data || [])
     setLoading(false)
   }
 
   useEffect(() => { if (user) fetchOrders() }, [user, role])
+
+  const updateStatus = async (id, status) => {
+    setBusy(true)
+    const { error } = await supabase.from('orders').update({ status }).eq('id', id)
+    if (!error) setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o))
+    setActionOrder(null)
+    setBusy(false)
+  }
+
+  const deleteOrder = async (id) => {
+    setBusy(true)
+    await supabase.from('order_items').delete().eq('order_id', id)
+    const { error } = await supabase.from('orders').delete().eq('id', id)
+    if (!error) setOrders(prev => prev.filter(o => o.id !== id))
+    setActionOrder(null)
+    setConfirmDelete(false)
+    setBusy(false)
+  }
+
+  const openAction = (e, order) => {
+    e.stopPropagation()
+    setConfirmDelete(false)
+    setActionOrder(order)
+  }
 
   const filtered = orders.filter((o) => {
     const matchSearch = !search || o.customers?.name?.includes(search)
@@ -117,7 +145,12 @@ export default function Orders() {
                 <span className="font-bold text-sm">₪{(o.total || 0).toFixed(2)}</span>
                 <StatusBadge status={o.status} />
               </div>
-              <ChevronLeft size={16} className="text-muted-foreground shrink-0" />
+              <button
+                onClick={(e) => openAction(e, o)}
+                className="p-1 text-muted-foreground hover:text-foreground shrink-0"
+              >
+                <MoreVertical size={18} />
+              </button>
             </div>
           ))
         )}
@@ -129,6 +162,68 @@ export default function Orders() {
       >
         <Plus size={26} />
       </button>
+
+      {/* Action sheet */}
+      {actionOrder && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setActionOrder(null)} />
+          <div className="fixed bottom-0 right-0 left-0 bg-card rounded-t-3xl z-50 shadow-2xl">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3">
+              <div>
+                <p className="font-bold text-base">{actionOrder.customers?.name || 'הזמנה'}</p>
+                <p className="text-xs text-muted-foreground">₪{(actionOrder.total || 0).toFixed(2)}</p>
+              </div>
+              <button onClick={() => setActionOrder(null)} className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
+                <X size={16} />
+              </button>
+            </div>
+
+            {!confirmDelete ? (
+              <div className="px-5 pb-8 flex flex-col gap-3">
+                <p className="text-xs font-semibold text-muted-foreground">שינוי סטטוס</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(STATUS).map(([key, { label, color }]) => (
+                    <button
+                      key={key}
+                      onClick={() => updateStatus(actionOrder.id, key)}
+                      disabled={busy || actionOrder.status === key}
+                      className={`py-2.5 rounded-xl text-xs font-semibold transition disabled:opacity-50 ${
+                        actionOrder.status === key ? color : 'bg-muted text-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 font-medium text-sm mt-1"
+                >
+                  <Trash2 size={16} />
+                  מחק הזמנה
+                </button>
+              </div>
+            ) : (
+              <div className="px-5 pb-8 flex flex-col gap-3">
+                <p className="text-sm text-center text-muted-foreground">האם למחוק את ההזמנה? לא ניתן לשחזר.</p>
+                <button
+                  onClick={() => deleteOrder(actionOrder.id)}
+                  disabled={busy}
+                  className="w-full py-3 rounded-xl bg-red-600 text-white font-semibold text-sm disabled:opacity-50"
+                >
+                  {busy ? 'מוחק...' : 'כן, מחק'}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="w-full py-3 rounded-xl bg-muted text-foreground font-medium text-sm"
+                >
+                  ביטול
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
