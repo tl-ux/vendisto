@@ -48,7 +48,7 @@ export default function Orders() {
     setLoading(true)
     let query = supabase
       .from('orders')
-      .select('id, created_at, total, status, note, customers(name, phone)')
+      .select('*, customers!customer_id(name, phone)')
       .order('created_at', { ascending: false })
       .limit(100)
     if (role === 'store_manager') query = query.eq('agent_id', user.id)
