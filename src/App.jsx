@@ -14,28 +14,35 @@ import VisitRoutes from './pages/VisitRoutes'
 import Promotions from './pages/Promotions'
 import Settings from './pages/Settings'
 
+const STORE_MANAGER_ALLOWED = ['/', '/orders', '/orders/new', '/debts']
+
+function Spinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <Spinner />
   return user ? children : <Navigate to="/login" replace />
 }
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <Spinner />
   return user ? <Navigate to="/" replace /> : children
+}
+
+function RoleRoute({ children, path }) {
+  const { role, loading } = useAuth()
+  if (loading) return <Spinner />
+  if (role === 'store_manager' && !STORE_MANAGER_ALLOWED.includes(path)) {
+    return <Navigate to="/" replace />
+  }
+  return children
 }
 
 export default function App() {
@@ -50,15 +57,15 @@ export default function App() {
           {/* Protected */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
-            <Route path="customers" element={<Customers />} />
+            <Route path="customers" element={<RoleRoute path="/customers"><Customers /></RoleRoute>} />
             <Route path="orders" element={<Orders />} />
             <Route path="orders/new" element={<NewOrder />} />
-            <Route path="products" element={<Products />} />
+            <Route path="products" element={<RoleRoute path="/products"><Products /></RoleRoute>} />
             <Route path="debts" element={<Debts />} />
-            <Route path="targets" element={<Targets />} />
-            <Route path="visit-routes" element={<VisitRoutes />} />
-            <Route path="promotions" element={<Promotions />} />
-            <Route path="settings" element={<Settings />} />
+            <Route path="targets" element={<RoleRoute path="/targets"><Targets /></RoleRoute>} />
+            <Route path="visit-routes" element={<RoleRoute path="/visit-routes"><VisitRoutes /></RoleRoute>} />
+            <Route path="promotions" element={<RoleRoute path="/promotions"><Promotions /></RoleRoute>} />
+            <Route path="settings" element={<RoleRoute path="/settings"><Settings /></RoleRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

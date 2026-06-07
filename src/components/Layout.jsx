@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { Home, Users, ShoppingCart, Menu, X, Package, CreditCard, Target, Navigation, Tag, Settings, ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '../lib/AuthContext'
 
 const BOTTOM_NAV = [
   { to: '/',          label: 'בית',     icon: Home,         end: true },
@@ -17,10 +18,18 @@ const MORE_ITEMS = [
   { to: '/settings',     label: 'הגדרות',       icon: Settings,    desc: 'הגדרות חשבון ומערכת' },
 ]
 
+const SM_BOTTOM_NAV_PATHS = ['/', '/orders']
+const SM_MORE_PATHS = ['/debts']
+
 export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const { role } = useAuth()
+
+  const isStoreManager = role === 'store_manager'
+  const visibleBottomNav = isStoreManager ? BOTTOM_NAV.filter(i => SM_BOTTOM_NAV_PATHS.includes(i.to)) : BOTTOM_NAV
+  const visibleMoreItems = isStoreManager ? MORE_ITEMS.filter(i => SM_MORE_PATHS.includes(i.to)) : MORE_ITEMS
 
   const isMoreActive = MORE_ITEMS.some((item) => location.pathname.startsWith(item.to))
 
@@ -38,7 +47,7 @@ export default function Layout() {
       {/* Bottom navigation */}
       <nav className="fixed bottom-0 right-0 left-0 bg-card border-t border-border z-40">
         <div className="flex items-stretch">
-          {BOTTOM_NAV.map(({ to, label, icon: Icon, end }) => (
+          {visibleBottomNav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -58,16 +67,18 @@ export default function Layout() {
             </NavLink>
           ))}
 
-          {/* More button */}
-          <button
-            onClick={() => setMenuOpen(true)}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium transition-colors ${
-              isMoreActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Menu size={22} strokeWidth={isMoreActive ? 2.5 : 1.8} />
-            <span>עוד</span>
-          </button>
+          {/* More button — hidden for store_manager if nothing to show */}
+          {visibleMoreItems.length > 0 && (
+            <button
+              onClick={() => setMenuOpen(true)}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium transition-colors ${
+                isMoreActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Menu size={22} strokeWidth={isMoreActive ? 2.5 : 1.8} />
+              <span>עוד</span>
+            </button>
+          )}
         </div>
       </nav>
 
@@ -86,7 +97,7 @@ export default function Layout() {
               </button>
             </div>
             <div className="px-4 pb-8 pt-1 flex flex-col gap-1">
-              {MORE_ITEMS.map(({ to, label, icon: Icon, desc }) => {
+              {visibleMoreItems.map(({ to, label, icon: Icon, desc }) => {
                 const isActive = location.pathname.startsWith(to)
                 return (
                   <button

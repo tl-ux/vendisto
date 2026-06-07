@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/api/supabaseClient'
+import { useAuth } from '@/lib/AuthContext'
 import { CreditCard, CheckCircle2, Search, AlertCircle } from 'lucide-react'
 
 export default function Debts() {
+  const { user, role } = useAuth()
   const [debts, setDebts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
 
-  const fetch = async () => {
+  const fetchDebts = async () => {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('debts')
       .select('*, customers(name, phone)')
       .eq('paid', false)
       .order('created_at', { ascending: false })
+    if (role === 'store_manager') query = query.eq('created_by', user.id)
+    const { data } = await query
     setDebts(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { fetch() }, [])
+  useEffect(() => { if (user) fetchDebts() }, [user, role])
 
   const markPaid = async (id) => {
     setUpdatingId(id)

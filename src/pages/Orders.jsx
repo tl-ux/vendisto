@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/api/supabaseClient'
+import { useAuth } from '@/lib/AuthContext'
 import { Plus, Search, ChevronLeft, Clock, CheckCircle2, XCircle, Truck } from 'lucide-react'
 
 const STATUS = {
@@ -34,6 +35,7 @@ function OrderSkeleton() {
 
 export default function Orders() {
   const navigate = useNavigate()
+  const { user, role } = useAuth()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -41,16 +43,18 @@ export default function Orders() {
 
   const fetchOrders = async () => {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('orders')
       .select('id, created_at, total, status, note, customers(name, phone)')
       .order('created_at', { ascending: false })
       .limit(100)
+    if (role === 'store_manager') query = query.eq('created_by', user.id)
+    const { data } = await query
     setOrders(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { fetchOrders() }, [])
+  useEffect(() => { if (user) fetchOrders() }, [user, role])
 
   const filtered = orders.filter((o) => {
     const matchSearch = !search || o.customers?.name?.includes(search)
